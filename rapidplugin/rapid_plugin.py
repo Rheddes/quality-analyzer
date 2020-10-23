@@ -24,8 +24,8 @@ from rapidplugin.utils.utils import KafkaUtils
 
 class RapidPlugin(KafkaPluginNonBlocking):
     '''
-    This main class handles consuming and producing from/to Kafka.
-    Code analysis is executed for the supported payloads.
+    This main class handles consuming from Kafka, executing code analysis, 
+    and producing the resulting payload back into a Kafka topic.
     '''
 
     def __init__(self, name, version, description, plugin_config):
