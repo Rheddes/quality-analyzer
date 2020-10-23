@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
+import os
+import shutil
 
 from fasten.plugins.kafka import KafkaPlugin
 import kafka.errors as errors
@@ -51,7 +53,8 @@ class RapidPlugin(KafkaPlugin):
         return self._description
     
     def free_resource(self):
-        pass
+        if os.path.exists(self.sources_dir):
+            shutil.rmtree(self.sources_dir)
 
     def announce(self):
         '''
@@ -98,6 +101,8 @@ class RapidPlugin(KafkaPlugin):
                                  "Produced quality analysis results for payload.")
         except Exception as error:
             self.log_failure(in_payload, "Produce failed for payload.", str(error))
+        finally:
+            self.free_resource()
 
     def produce_payload(self, in_payload, out_payload):
         out_message = self.create_message(in_payload, {"payload": out_payload})

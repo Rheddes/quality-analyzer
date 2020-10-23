@@ -76,13 +76,6 @@ class LizardAnalyzer:
             assert os.path.isabs(source_path)
             return source_path
 
-    def clean_up(self):
-        '''
-        TODO
-        '''
-        # if os.path.exists(self.base_dir):
-        #     shutil.rmtree(self.base_dir)
-
 
 class LizardPackage(Package):
 
