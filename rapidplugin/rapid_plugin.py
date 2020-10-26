@@ -53,8 +53,6 @@ class RapidPlugin(KafkaPlugin):
         return self._description
     
     def free_resource(self):
-        if os.path.exists(self.sources_dir):
-            shutil.rmtree(self.sources_dir)
 
     def announce(self):
         '''
@@ -101,8 +99,6 @@ class RapidPlugin(KafkaPlugin):
                                  "Produced quality analysis results for payload.")
         except Exception as error:
             self.log_failure(in_payload, "Produce failed for payload.", str(error))
-        finally:
-            self.free_resource()
 
     def produce_payload(self, in_payload, out_payload):
         out_message = self.create_message(in_payload, {"payload": out_payload})
