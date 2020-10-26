@@ -16,9 +16,8 @@
 import logging
 import argparse
 import pprint
-from time import sleep
-from rapid_plugin import RapidPlugin
-from config import Config
+from rapidplugin.rapid_plugin import RapidPlugin
+from rapidplugin.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -26,17 +25,18 @@ plugin_name = 'RapidPlugin'
 plugin_description = 'A FASTEN plug-in to populate risk related metadata for a product.'
 plugin_version = '0.0.1'
 
+
 def get_args_parser():
     args_parser = argparse.ArgumentParser("RapidPlugin")
-    
+
     args_parser.add_argument('--consume_topic', type=str,
                              default='fasten.RepoCloner.out',
                              help="Kafka topic to consume from.")
-    
+
     args_parser.add_argument('--produce_topic', type=str,
                              default='fasten.RapidPlugin.callable.out',
                              help="Kafka topic to produce to.")
-    
+
     args_parser.add_argument('--err_topic', type=str,
                              default='fasten.RapidPlugin.callable.err',
                              help="Kafka topic to write errors to.")
@@ -44,22 +44,28 @@ def get_args_parser():
     args_parser.add_argument('--log_topic', type=str,
                              default='fasten.RapidPlugin.callable.log',
                              help="Kafka topic to write logs to.")
-    
+
     args_parser.add_argument('--bootstrap_servers', type=str,
                              default='localhost',
                              help="Kafka servers, comma separated list between quotes.")
-    
+
     args_parser.add_argument('--group_id', type=str,
                              default='RapidPlugin',
                              help="Kafka consumer group ID to which the consumer belongs.")
-    
-    args_parser.add_argument('--sleep_time', type=int,
+
+    args_parser.add_argument('--consumer_timeout_ms', type=int,
+                             default=1000,
+                             help="Timeout in milliseconds to consume messages from topic.")
+
+    args_parser.add_argument('--consumption_delay_sec', type=int,
                              default=1,
-                             help="Time to sleep in between each message consumption (in sec).")
+                             help="Delay in seconds between each message consumption call.")
+
     args_parser.add_argument('--sources_dir', type=str,
                              default='src',
                              help="Base directory for temporary storing downloaded source code.")
     return args_parser
+
 
 def get_config(args):
     c = Config('Default')
@@ -69,26 +75,27 @@ def get_config(args):
     c.add_config_value('err_topic', args.err_topic)
     c.add_config_value('log_topic', args.log_topic)
     c.add_config_value('group_id', args.group_id)
-    c.add_config_value('sleep_time', args.sleep_time)
+    c.add_config_value('consumption_delay_sec', args.consumption_delay_sec)
+    c.add_config_value('consumer_timeout_ms', args.consumer_timeout_ms)
     c.add_config_value('sources_dir', args.sources_dir)
     return c
+
 
 def main():
     parser = get_args_parser()
     plugin_config = get_config(parser.parse_args())
 
     print(plugin_name + ' ' + plugin_version)
-    print('Running with configuration ' + '\"' + plugin_config.get_config_name() + '\"')
+    print('Running with configuration ' +
+          '\"' + plugin_config.get_config_name() + '\"')
 
-    pp = pprint.PrettyPrinter(indent = 2)
+    pp = pprint.PrettyPrinter(indent=2)
     pp.pprint(plugin_config.get_all_values())
-    
-    plugin = RapidPlugin(plugin_name, plugin_version, plugin_description, plugin_config)
 
-    # Run forever
-    while True:
-        plugin.consume_messages()
-        sleep(plugin_config.get_config_value('sleep_time'))
+    plugin = RapidPlugin(plugin_name, plugin_version,
+                         plugin_description, plugin_config)
+    plugin.run_forever()
+
 
 if __name__ == "__main__":
     main()

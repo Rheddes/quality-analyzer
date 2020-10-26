@@ -15,16 +15,17 @@
 import os
 import shutil
 
-from fasten.plugins.kafka import KafkaPlugin
-import kafka.errors as errors
-from analysis.lizard_analyzer import LizardAnalyzer
-from utils.utils import MavenUtils, KafkaUtils
+import datetime
+from time import sleep
+from rapidplugin.kafka_non_blocking import KafkaPluginNonBlocking
+from rapidplugin.analysis.lizard_analyzer import LizardAnalyzer
+from rapidplugin.utils.utils import KafkaUtils
 
 
-class RapidPlugin(KafkaPlugin):
+class RapidPlugin(KafkaPluginNonBlocking):
     '''
-    This main class handles consuming from Kafka, executing code analysis, 
-    and producing the resulting payload back into a Kafka topic.
+    This main class handles consuming and producing from/to Kafka.
+    Code analysis is executed for the supported payloads.
     '''
 
     def __init__(self, name, version, description, plugin_config):
@@ -39,31 +40,57 @@ class RapidPlugin(KafkaPlugin):
         self.error_topic = self.plugin_config.get_config_value('err_topic')
         self.group_id = self.plugin_config.get_config_value('group_id')
         self.sources_dir = self.plugin_config.get_config_value('sources_dir')
+        self.consumer_timeout_ms = self.plugin_config.get_config_value('consumer_timeout_ms')
         self.set_consumer()
         self.set_producer()
-        self.announce()
 
     def name(self):
         return self._name
 
     def version(self):
         return self._version
-    
+
     def description(self):
         return self._description
-    
-    def free_resource(self):
 
-    def announce(self):
+    def run_forever(self):
+        self.announce_activation()
+        sleep_time = self.plugin_config.get_config_value('consumption_delay_sec')
+        try:
+            while True:
+                self.flush_logs()
+                sleep(sleep_time)
+            try:
+                self.consume_messages()
+            except BaseException as e:
+                self.handle_failure({}, 'Fatal exception while consuming.', e)
+                raise e
+        finally:
+            self.announce_termination()
+            self.free_resource()
+
+    def flush_logs(self):
+        self.logs.flush()
+        self.errors.flush()
+
+    def announce_activation(self):
         '''
         Announces the activation of this plugin instance to the log_topic.
         '''
-        self.log_success(format(
-
+        self.handle_success(format(
             self.plugin_config.get_all_values()),
                          "Plugin active with configuration " +
                          "'" + self.plugin_config.get_config_name() + "'")
-    
+
+    def announce_termination(self):
+        '''
+        Announces the termination of this plugin instance to the log_topic.
+        '''
+        self.handle_success(format(
+            self.plugin_config.get_all_values()),
+                         "Plugin terminated with configuration " +
+                         "'" + self.plugin_config.get_config_name() + "'")
+
     def consume(self, record):
         '''
         Call-back method to handle a message on self.consume_topic.
@@ -77,10 +104,11 @@ class RapidPlugin(KafkaPlugin):
         in_payload = KafkaUtils.tailor_input(payload)
         try:
             KafkaUtils.validate_message(payload)
-            self.log_success(in_payload, "Consumed message successfully.")
+            self.handle_success(in_payload, "Consumed message successfully.")
             self.produce(in_payload)
-        except Exception as error:
-            self.log_failure(in_payload, "Consume failed for message.", str(error))
+        except Exception as e:
+            self.handle_failure(in_payload, "Consume failed for message.",
+                                str(e))
 
     def produce(self, in_payload):
         '''
@@ -95,35 +123,55 @@ class RapidPlugin(KafkaPlugin):
             out_payloads = analyzer.analyze(in_payload)
             for out_payload in out_payloads:
                 self.produce_payload(in_payload, out_payload)
-                self.log_success(out_payload,
-                                 "Produced quality analysis results for payload.")
-        except Exception as error:
-            self.log_failure(in_payload, "Produce failed for payload.", str(error))
+            self.handle_success(in_payload,
+                                "Quality analysis results produced.")
+        except Exception as e:
+            self.handle_failure(in_payload,
+                                "Quality analysis failed for payload.", str(e))
 
     def produce_payload(self, in_payload, out_payload):
         out_message = self.create_message(in_payload, {"payload": out_payload})
-        self.emit_message(self.produce_topic, out_message, "", "")
-            
-    def log_failure(self, in_payload, failure, error):
+        self.emit_message(self.produce_topic, out_message, "[SUCCESS]",
+                          out_message)
+
+    def handle_failure(self, in_payload, failure, error):
         '''
-        Log a failure and the underlying error to the appropriate topics.
+        Log a failure and the underlying error to the appropriate topics and to
+        stderr.
 
         Arguments:
-          in_payload (JSON): The consumed message for which the failure happened.
+          in_payload (JSON): The payload for which the failure occurred.
           failure (str)    : Description of what failed.
           error (str)      : Description of the underlying error (exception).
         '''
-        log_message = self.create_message(in_payload, {"status": "FAILED"})
-        self.emit_message(self.log_topic, log_message, "[FAILED]", failure)
+        log_message = self.create_message(in_payload, {"status": "FAILURE",
+                                                       "failure": failure})
+        self.emit_message(self.log_topic, log_message, "[FAILURE]",
+                          log_message)
         err_message = self.create_message(in_payload, {"error": error})
-        self.emit_message(self.error_topic, err_message, "[ERROR]", error)
+        self.err(err_message)
+        self.emit_message(self.error_topic, err_message, "[ERROR]",
+                          err_message)
 
-    def log_success(self, in_payload, success):
+    def handle_success(self, in_payload, success):
         '''
         Log a success to the appropriate topics.
 
         Arguments:
-          in_payload (JSON): The consumed message for which the success happened.
+          in_payload (JSON): The payload for which the success occurred.
         '''
-        log_message = self.create_message(in_payload, {"status": "SUCCESS"})
-        self.emit_message(self.log_topic, log_message, "[SUCCESS]", success)
+        log_message = self.create_message(in_payload, {"status": "SUCCESS",
+                                                       "success": success})
+        self.emit_message(self.log_topic, log_message, "[SUCCESS]",
+                          log_message)
+
+    def err(self, err_message):
+        super().err("{}: Error: {}".format(
+            str(datetime.datetime.now()), err_message
+        ))
+
+    def free_resource(self):
+        if self.consumer is not None:
+            self.consumer.close()
+        if self.producer is not None:
+            self.producer.close()
