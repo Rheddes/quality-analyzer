@@ -47,7 +47,7 @@ class MavenUtils:
         tmp_dir = base_dir/"tmp"
         if repo_type == "git":
             repo = Repo(repo_path)
-            assert repo.tags[version_tag] is not None
+            assert repo.tags[version_tag] is not None, "Commit tag does not exist."
             archive_name = version_tag+".zip"
             archive_file_name = tmp_dir/archive_name
             try:

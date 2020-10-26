@@ -24,7 +24,7 @@ from rapidplugin.utils.utils import KafkaUtils
 
 class RapidPlugin(KafkaPluginNonBlocking):
     '''
-    This main class handles consuming from Kafka, executing code analysis, 
+    This main class handles consuming from Kafka, executing code analysis,
     and producing the resulting payload back into a Kafka topic.
     '''
 
@@ -134,6 +134,8 @@ class RapidPlugin(KafkaPluginNonBlocking):
         except Exception as e:
             self.handle_failure(in_payload,
                                 "Quality analysis failed for payload.", str(e))
+        finally:
+            self.clean_up()
 
     def produce_payload(self, in_payload, out_payload):
         out_message = self.create_message(in_payload, {"payload": out_payload})
@@ -184,6 +186,11 @@ class RapidPlugin(KafkaPluginNonBlocking):
     def flush_logs(self):
         self.logs.flush()
         self.errors.flush()
+
+    def clean_up(self):
+        tmp_dir = os.path.join(self.sources_dir, 'tmp')
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
 
     def free_resource(self):
         try:
